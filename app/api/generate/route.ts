@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if (error) return error;
   let input;
   try {
-    input = validateGeneration(await readInput(request));
+    input = validateGeneration(await readInput(request, 64000));
   } catch (e) {
     return jsonError((e as Error).message, 400);
   }

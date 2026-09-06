@@ -46,6 +46,20 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
+    // Prebundle the chat controls together to avoid mixed React chunks during
+    // the development preview's first dependency discovery.
+    environments: {
+      client: {
+        optimizeDeps: {
+          include: [
+            '@base-ui/react/button',
+            '@base-ui/react/dialog',
+            '@base-ui/react/progress',
+            '@base-ui/react/select',
+          ],
+        },
+      },
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

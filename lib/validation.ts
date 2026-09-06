@@ -1,17 +1,21 @@
 import type { Deck, Slide } from './deck';
 import { VOICE_OPTIONS } from './voices.ts';
+import { validateContext } from './conversation.ts';
 export const VOICES = VOICE_OPTIONS.map((voice) => voice.value);
 export const AUDIENCES = ['curious', 'kids', 'advanced'] as const;
 export function validateGeneration(input: unknown) {
   if (!input || typeof input !== 'object')
     throw new Error('Please enter a question.');
-  const { question, count, audience } = input as Record<string, unknown>;
+  const { question, count, audience, context } = input as Record<
+    string,
+    unknown
+  >;
   if (
     typeof question !== 'string' ||
-    question.trim().length < 5 ||
+    question.trim().length < 1 ||
     question.length > 1500
   )
-    throw new Error('Enter a question between 5 and 1,500 characters.');
+    throw new Error('Enter a message between 1 and 1,500 characters.');
   if (
     typeof count !== 'number' ||
     !Number.isInteger(count) ||
@@ -24,7 +28,13 @@ export function validateGeneration(input: unknown) {
     !AUDIENCES.includes(audience as (typeof AUDIENCES)[number])
   )
     throw new Error('Choose an audience.');
-  return { question: question.trim(), count, audience };
+  const history = validateContext(context);
+  return {
+    question: question.trim(),
+    count,
+    audience,
+    ...(history.length ? { context: history } : {}),
+  };
 }
 export function validateSpeech(input: unknown) {
   if (!input || typeof input !== 'object')

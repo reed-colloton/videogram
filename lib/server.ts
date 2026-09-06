@@ -15,7 +15,7 @@ export function requestError(request: Request) {
     return jsonError('Send a JSON request.', 415);
   return null;
 }
-export async function readInput(request: Request) {
+export async function readInput(request: Request, maxBytes = 16000) {
   const reader = request.body?.getReader();
   if (!reader) throw new Error('The request is empty.');
   const chunks: Uint8Array[] = [];
@@ -24,7 +24,7 @@ export async function readInput(request: Request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 16000) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new Error('The request is too long.');
     }

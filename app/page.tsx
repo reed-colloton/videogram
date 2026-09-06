@@ -1,23 +1,17 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowUpRight,
-  ArrowRight,
-  Play,
-  Pause,
-  Sparkles,
-  Layers,
+  ArrowUp,
   AudioLines,
-  SlidersHorizontal,
-  Download,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
   CircleHelp,
   LoaderCircle,
-  Check,
+  MessageCircle,
+  Plus,
+  Play,
+  SlidersHorizontal,
+  Square,
   X,
-  Pencil,
-  RotateCcw,
 } from 'lucide-react';
 import {
   Select,
@@ -26,172 +20,85 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
-import {
-  demo,
-  formatTime,
-  estimatedDuration,
-  type Deck,
-  type Slide,
-} from '@/lib/deck';
-import { drawSlide } from '@/lib/render';
-import { download, exportVideo, filename, getNarration } from '@/lib/media';
-import { validateGeneration } from '@/lib/validation';
+import { VideoReply } from '@/components/video-reply';
+import { demo, type Deck, type Slide } from '@/lib/deck';
+import { getNarration } from '@/lib/media';
+import { validateDeck, validateGeneration } from '@/lib/validation';
+import { conversationContext } from '@/lib/conversation';
 import { DEFAULT_VOICE, VOICE_OPTIONS } from '@/lib/voices';
-import {
-  generateSlideImages,
-  hasMissingImages,
-  loadSlideImage,
-  requestSlideImage,
-} from '@/lib/image-loading';
+import { generateSlideImages } from '@/lib/image-loading';
 import { visibleSlideChanged } from '@/lib/slide-images';
+import type { ChatTurn } from '@/lib/chat';
 
-const demoDurations = [13.429, 14.354, 14.946, 16.521, 17.135];
-type Registry = {
-  registerTool: (
-    tool: {
-      name: string;
-      title: string;
-      description: string;
-      inputSchema: object;
-      annotations: { readOnlyHint: boolean };
-      execute: (input: unknown) => Promise<unknown>;
-    },
-    options: { signal: AbortSignal },
-  ) => void | Promise<void>;
-};
 function Choice({
   label,
   value,
   onChange,
   items,
-  disabled,
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   items: { value: string; label: string }[];
-  disabled?: boolean;
 }) {
   return (
-    <Select
-      disabled={disabled}
-      value={value}
-      onValueChange={(v) => v && onChange(v)}
-      items={items}
-    >
+    <Select value={value} onValueChange={(v) => v && onChange(v)} items={items}>
       <SelectTrigger aria-label={label} className="choice">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {items.map((i) => (
-          <SelectItem key={i.value} value={i.value}>
-            {i.label}
+        {items.map((item) => (
+          <SelectItem key={item.value} value={item.value}>
+            {item.label}
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
   );
 }
-function SlideCanvas({
-  slide,
-  index,
-  count,
-}: {
-  slide: Slide;
-  index: number;
-  count: number;
-}) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    const canvas = ref.current;
-    if (canvas) {
-      drawSlide(canvas, slide, index, count);
-      if (slide.imageUrl)
-        void loadSlideImage(slide.imageUrl, controller.signal)
-          .then((image) => {
-            if (!controller.signal.aborted)
-              drawSlide(canvas, slide, index, count, image);
-          })
-          .catch(() => {});
-    }
-    return () => controller.abort();
-  }, [slide, index, count]);
-  return (
-    <canvas
-      ref={ref}
-      width={1280}
-      height={720}
-      className="slide-canvas"
-      role="img"
-      aria-label={`${slide.title}. ${slide.body}. ${slide.points.join('. ')}`}
-    />
-  );
-}
+
 export default function Home() {
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const turnsRef = useRef<ChatTurn[]>([]);
   const [question, setQuestion] = useState('');
-  const [count, setCount] = useState('5');
+  const [count, setCount] = useState('4');
   const [voice, setVoice] = useState<string>(DEFAULT_VOICE);
   const [audience, setAudience] = useState('curious');
-  const [deck, setDeck] = useState<Deck>(demo);
-  const [sample, setSample] = useState(true);
-  const [active, setActive] = useState(0);
-  const [tab, setTab] = useState('slides');
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [connected, setConnected] = useState<boolean | null>(null);
+  const [settings, setSettings] = useState(false);
   const [help, setHelp] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [durations, setDurations] = useState(demoDurations);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [video, setVideo] = useState<{
-    blob: Blob;
-    url: string;
-    name: string;
-  } | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [draft, setDraft] = useState<Slide | null>(null);
-  const audioContext = useRef<AudioContext | null>(null);
-  const sources = useRef<AudioBufferSourceNode[]>([]);
-  const raf = useRef(0);
-  const offset = useRef(0);
-  const aborter = useRef<AbortController | null>(null);
-  const busyRef = useRef(false);
-  const ownedImages = useRef(new Set<string>());
-  const releaseImages = useCallback(() => {
-    for (const url of ownedImages.current) URL.revokeObjectURL(url);
-    ownedImages.current.clear();
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const job = useRef<{ id: string; controller: AbortController } | null>(null);
+  const exporting = useRef<string | null>(null);
+  const urls = useRef(new Set<string>());
+  const viewport = useRef<HTMLDivElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const locked = Boolean(busyId || exportingId);
+  const replace = useCallback((next: ChatTurn[]) => {
+    turnsRef.current = next;
+    setTurns(next);
   }, []);
-  const slide = deck.slides[active];
-  const total = durations.reduce((a, b) => a + b, 0);
-  const locked = Boolean(busy);
-  const missingImages = !sample && hasMissingImages(deck.slides);
-  const stop = useCallback(() => {
-    cancelAnimationFrame(raf.current);
-    for (const source of sources.current) {
-      try {
-        source.stop();
-      } catch {}
-      source.disconnect();
-    }
-    sources.current = [];
-    if (audioContext.current) {
-      void audioContext.current.close().catch(() => {});
-      audioContext.current = null;
-    }
-    setPlaying(false);
+  const update = useCallback((id: string, patch: Partial<ChatTurn>) => {
+    const next = turnsRef.current.map((turn) =>
+      turn.id === id ? { ...turn, ...patch } : turn,
+    );
+    turnsRef.current = next;
+    setTurns(next);
   }, []);
-  const invalidateVideo = () => setVideo(null);
+  const release = useCallback(() => {
+    for (const url of urls.current) URL.revokeObjectURL(url);
+    urls.current.clear();
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/status', { signal: controller.signal })
@@ -202,116 +109,192 @@ export default function Home() {
   }, []);
   useEffect(
     () => () => {
-      aborter.current?.abort();
-      stop();
-      releaseImages();
+      job.current?.controller.abort();
+      release();
     },
-    [stop, releaseImages],
+    [release],
   );
-  useEffect(
-    () => () => {
-      if (video) URL.revokeObjectURL(video.url);
-    },
-    [video],
-  );
-  function chooseSlide(index: number) {
-    stop();
-    setActive(index);
-    offset.current = durations.slice(0, index).reduce((a, b) => a + b, 0);
-    setPosition(offset.current);
-  }
-  const populateImages = useCallback(
-    async (input: Deck, signal: AbortSignal) => {
-      const working: Deck = { ...input, slides: [...input.slides] };
-      setBusy('Designing slide images…');
-      const failures = await generateSlideImages(
-        working,
-        signal,
-        (index, url) => {
-          ownedImages.current.add(url);
-          working.slides[index] = { ...working.slides[index], imageUrl: url };
-          setDeck({ ...working, slides: [...working.slides] });
-        },
-        (done) =>
-          setBusy(
-            `Designing slide images · ${done} of ${working.slides.length}`,
-          ),
+  const scrollDown = useCallback(() => {
+    const element = viewport.current;
+    if (element)
+      element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' });
+    setAtBottom(true);
+  }, []);
+  useEffect(() => {
+    if (atBottom) {
+      const frame = requestAnimationFrame(() =>
+        viewport.current?.scrollTo({
+          top: viewport.current.scrollHeight,
+          behavior: 'smooth',
+        }),
       );
-      if (failures.length)
-        throw new Error(
-          `${failures.length} slide image${failures.length === 1 ? '' : 's'} could not finish. Your completed slides are kept. ${failures[0].message}`,
-        );
-      return working;
-    },
-    [],
-  );
-  const generate = useCallback(
-    async (input: { question: string; count: number; audience: string }) => {
-      const valid = validateGeneration(input);
-      if (busyRef.current)
-        throw new Error('Please wait for the current operation.');
-      busyRef.current = true;
-      stop();
-      setError('');
-      setBusy('Writing your story…');
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [turns, atBottom]);
+  useEffect(() => {
+    const element = textarea.current;
+    if (element) {
+      element.style.height = 'auto';
+      element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+    }
+  }, [question]);
+
+  const runTurn = useCallback(
+    async (turn: ChatTurn) => {
+      if (job.current || exporting.current)
+        throw new Error('Please wait for the current video.');
       const controller = new AbortController();
-      aborter.current = controller;
+      job.current = { id: turn.id, controller };
+      setBusyId(turn.id);
+      setPlayingId(null);
+      update(turn.id, {
+        error: undefined,
+        status: turn.deck ? 'images' : 'thinking',
+        phase: 'Thinking about your question…',
+      });
       try {
-        const response = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(valid),
-          signal: controller.signal,
-        });
-        const result = (await response.json()) as Deck & { error?: string };
-        if (!response.ok)
-          throw new Error(result.error || 'The lesson could not be created.');
-        const next = result as Deck;
-        releaseImages();
-        setDeck(next);
-        setQuestion(valid.question);
-        setCount(String(valid.count));
-        setAudience(valid.audience);
-        setActive(0);
-        setPosition(0);
-        offset.current = 0;
-        setSample(false);
-        setVideo(null);
-        setDurations(next.slides.map(estimatedDuration));
-        setConnected(true);
-        await populateImages(next, controller.signal);
+        let deck = turn.deck;
+        if (!deck) {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              question: turn.question,
+              count: turn.count,
+              audience: turn.audience,
+              context: turn.context,
+            }),
+            signal: controller.signal,
+          });
+          const result = (await response.json()) as Deck & { error?: string };
+          if (!response.ok)
+            throw new Error(
+              result.error || 'Your answer could not be created.',
+            );
+          controller.signal.throwIfAborted();
+          deck = result;
+          update(turn.id, { deck });
+          setConnected(true);
+        }
+        const working: Deck = { ...deck, slides: [...deck.slides] };
+        if (!turn.sample) {
+          update(turn.id, { status: 'images', phase: 'Creating the visuals…' });
+          const failures = await generateSlideImages(
+            working,
+            controller.signal,
+            (index, url) => {
+              if (controller.signal.aborted) {
+                URL.revokeObjectURL(url);
+                return;
+              }
+              urls.current.add(url);
+              working.slides[index] = {
+                ...working.slides[index],
+                imageUrl: url,
+              };
+              update(turn.id, {
+                deck: { ...working, slides: [...working.slides] },
+              });
+            },
+            (done) =>
+              update(turn.id, {
+                phase: `Creating the visuals · ${done} of ${working.slides.length}`,
+              }),
+          );
+          if (failures.length)
+            throw new Error(
+              `${failures.length} visual${failures.length === 1 ? '' : 's'} could not finish. ${failures[0].message}`,
+            );
+        }
+        update(turn.id, { status: 'audio', phase: 'Adding the voice…' });
+        const clips = await getNarration(
+          working,
+          turn.voice,
+          Boolean(turn.sample),
+          controller.signal,
+          (done) =>
+            update(turn.id, {
+              phase: `Adding the voice · ${done} of ${working.slides.length}`,
+            }),
+        );
+        controller.signal.throwIfAborted();
+        update(turn.id, { deck: working, clips, status: 'ready', phase: '' });
         return {
-          title: next.title,
-          slideCount: next.slides.length,
-          status: 'slides_created',
+          title: working.title,
+          slideCount: working.slides.length,
+          status: 'video_reply_ready',
         };
+      } catch (e) {
+        update(turn.id, {
+          status: controller.signal.aborted ? 'cancelled' : 'error',
+          phase: '',
+          error: controller.signal.aborted
+            ? 'Response stopped. You can continue from here.'
+            : e instanceof Error
+              ? e.message
+              : 'Something went wrong. Please try again.',
+        });
+        return { status: controller.signal.aborted ? 'cancelled' : 'error' };
       } finally {
-        busyRef.current = false;
-        setBusy('');
-        aborter.current = null;
+        if (job.current?.controller === controller) {
+          job.current = null;
+          setBusyId(null);
+        }
       }
     },
-    [stop, populateImages, releaseImages],
+    [update],
   );
-  const actions = useRef({ generate });
-  actions.current = { generate };
+
+  const send = useCallback(
+    async (
+      input: { question: string; count: number; audience: string },
+      example = false,
+    ) => {
+      const valid = validateGeneration(input);
+      if (job.current || exporting.current)
+        throw new Error('Please wait for the current video.');
+      const turn: ChatTurn = {
+        id: crypto.randomUUID(),
+        ...valid,
+        voice,
+        context: conversationContext(turnsRef.current),
+        status: 'thinking',
+        phase: 'Thinking about your question…',
+        ...(example ? { deck: demo, sample: true, count: 5 } : {}),
+      };
+      replace([...turnsRef.current, turn]);
+      setQuestion('');
+      setError('');
+      setAtBottom(true);
+      return runTurn(turn);
+    },
+    [voice, replace, runTurn],
+  );
+  const actions = useRef({ send });
+  actions.current = { send };
   useEffect(() => {
+    type Registry = {
+      registerTool: (
+        tool: object,
+        options: { signal: AbortSignal },
+      ) => void | Promise<void>;
+    };
     const registry = (document as Document & { modelContext?: Registry })
       .modelContext;
     if (!registry) return;
-    const lifecycle = new AbortController();
+    const controller = new AbortController();
     try {
       void Promise.resolve(
         registry.registerTool(
           {
-            name: 'create_videogram_slides',
-            title: 'Create a Videogram lesson',
+            name: 'ask_videogram',
+            title: 'Ask Videogram',
             description:
-              'Generate a script and 2–10 illustrated slide images; wait for all images before returning. Voiceover and video export are separate actions in the workspace. Requires the site AI connection.',
+              'Send a message in the current conversation and wait for a narrated video reply. Earlier completed replies provide context for follow-up questions. Requires the site AI connection.',
             inputSchema: {
               type: 'object',
               properties: {
-                question: { type: 'string', minLength: 5, maxLength: 1500 },
+                question: { type: 'string', minLength: 1, maxLength: 1500 },
                 count: { type: 'integer', minimum: 2, maximum: 10 },
                 audience: {
                   type: 'string',
@@ -322,845 +305,357 @@ export default function Home() {
               additionalProperties: false,
             },
             annotations: { readOnlyHint: false },
-            execute: async (input) => {
-              const valid = validateGeneration(input);
-              return actions.current.generate(valid);
-            },
+            execute: (input: unknown) =>
+              actions.current.send(validateGeneration(input)),
           },
-          { signal: lifecycle.signal },
+          { signal: controller.signal },
         ),
       ).catch(() => {});
     } catch {}
-    return () => lifecycle.abort();
+    return () => controller.abort();
   }, []);
-  function report(e: unknown) {
-    if (e instanceof DOMException && e.name === 'AbortError') return;
-    setError(
-      e instanceof Error
-        ? e.message
-        : 'Something went wrong. Please try again.',
+  function submit(text = question, example = false) {
+    void send(
+      { question: text, count: Number(count), audience },
+      example,
+    ).catch((e) =>
+      setError(e instanceof Error ? e.message : 'Please try again.'),
     );
   }
-  async function togglePlayback() {
-    if (playing) {
-      stop();
-      return;
-    }
-    if (locked) return;
-    if (missingImages) {
-      setError('Finish the missing slide images before playing the video.');
-      return;
-    }
+  function newChat() {
+    if (job.current || exporting.current) return;
+    setPlayingId(null);
+    replace([]);
+    release();
+    setQuestion('');
     setError('');
-    setBusy('Preparing narration…');
-    busyRef.current = true;
-    const controller = new AbortController();
-    aborter.current = controller;
-    let context: AudioContext | null = null;
-    try {
-      context = new AudioContext();
-      audioContext.current = context;
-      await context.resume();
-      const clips = await getNarration(
-        deck,
-        voice,
-        sample,
-        controller.signal,
-        (i) => setBusy(`Preparing narration ${i} of ${deck.slides.length}…`),
-      );
-      const buffers = await Promise.all(
-        clips.map(async (b) => context!.decodeAudioData(await b.arrayBuffer())),
-      );
-      controller.signal.throwIfAborted();
-      const nextDurations = buffers.map((b) => b.duration);
-      setDurations(nextDurations);
-      const nextTotal = nextDurations.reduce((a, b) => a + b, 0);
-      // Preserve slide selection when estimates are replaced by measured audio lengths.
-      const oldStart = durations.slice(0, active).reduce((a, b) => a + b, 0);
-      let from =
-        nextDurations.slice(0, active).reduce((a, b) => a + b, 0) +
-        Math.max(0, offset.current - oldStart);
-      if (from >= nextTotal - 0.05) from = 0;
-      offset.current = from;
-      const start = context.currentTime;
-      let cumulative = 0;
-      buffers.forEach((buffer) => {
-        const end = cumulative + buffer.duration;
-        if (end > from) {
-          const source = context!.createBufferSource();
-          source.buffer = buffer;
-          source.connect(context!.destination);
-          source.start(
-            start + Math.max(0, cumulative - from),
-            Math.max(0, from - cumulative),
-          );
-          sources.current.push(source);
-        }
-        cumulative = end;
-      });
-      setPlaying(true);
-      const clock = context;
-      const tick = () => {
-        const elapsed = Math.min(nextTotal, from + clock.currentTime - start);
-        offset.current = elapsed;
-        setPosition(elapsed);
-        let sum = 0,
-          index = 0;
-        for (let i = 0; i < nextDurations.length; i++) {
-          sum += nextDurations[i];
-          index = i;
-          if (elapsed < sum) break;
-        }
-        setActive(index);
-        if (elapsed >= nextTotal) {
-          stop();
-          return;
-        }
-        raf.current = requestAnimationFrame(tick);
-      };
-      tick();
-    } catch (e) {
-      stop();
-      report(e);
-    } finally {
-      setBusy('');
-      busyRef.current = false;
-      aborter.current = null;
-    }
+    setAtBottom(true);
+    textarea.current?.focus();
   }
-  async function makeVideo() {
-    if (missingImages) {
-      setError('Finish the missing slide images before exporting.');
-      return;
-    }
-    stop();
-    setError('');
-    setVideo(null);
-    setExportOpen(true);
-    setProgress(0);
-    setBusy('Preparing voiceover…');
-    busyRef.current = true;
-    const controller = new AbortController();
-    aborter.current = controller;
-    let context: AudioContext | null = null;
-    try {
-      context = new AudioContext();
-      await context.resume();
-      const clips = await getNarration(
-        deck,
-        voice,
-        sample,
-        controller.signal,
-        (i) => setBusy(`Preparing voiceover ${i} of ${deck.slides.length}…`),
-      );
-      setBusy('Rendering your video…');
-      const blob = await exportVideo(
-        deck,
-        clips,
-        context,
-        controller.signal,
-        (p, index) => {
-          setProgress(p);
-          setActive(index);
-        },
-      );
-      const name = `${filename(deck.title)}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`;
-      setVideo({ blob, url: URL.createObjectURL(blob), name });
-      setProgress(100);
-    } catch (e) {
-      report(e);
-      setExportOpen(false);
-    } finally {
-      if (context) await context.close().catch(() => {});
-      setBusy('');
-      busyRef.current = false;
-      aborter.current = null;
-      offset.current = 0;
-      setPosition(0);
-      setActive(0);
-    }
-  }
-  async function renderImages(allMissing: boolean) {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    stop();
-    setError('');
-    setVideo(null);
-    const controller = new AbortController();
-    aborter.current = controller;
-    setBusy(
-      allMissing ? 'Finishing slide images…' : `Designing slide ${active + 1}…`,
+  function revise(id: string, index: number, slide: Slide, redesign = false) {
+    if (job.current || exporting.current) return;
+    const turn = turnsRef.current.find((t) => t.id === id);
+    if (!turn?.deck) return;
+    validateDeck(
+      {
+        ...turn.deck,
+        slides: turn.deck.slides.map((s, i) => (i === index ? slide : s)),
+      },
+      turn.deck.slides.length,
     );
-    try {
-      if (allMissing) await populateImages(deck, controller.signal);
-      else {
-        const url = await requestSlideImage(deck, active, controller.signal);
-        ownedImages.current.add(url);
-        if (slide.imageUrl) {
-          URL.revokeObjectURL(slide.imageUrl);
-          ownedImages.current.delete(slide.imageUrl);
-        }
-        setDeck((current) => ({
-          ...current,
-          slides: current.slides.map((s, i) =>
-            i === active ? { ...s, imageUrl: url } : s,
-          ),
-        }));
+    if (!turn.sample && !slide.visualBrief?.trim())
+      throw new Error('Add a visual direction before updating this reply.');
+    const previous = turn.deck.slides[index];
+    let next = slide;
+    if (!turn.sample && (redesign || visibleSlideChanged(previous, slide))) {
+      if (previous.imageUrl) {
+        URL.revokeObjectURL(previous.imageUrl);
+        urls.current.delete(previous.imageUrl);
       }
-    } catch (e) {
-      report(e);
-    } finally {
-      setBusy('');
-      busyRef.current = false;
-      aborter.current = null;
+      next = { ...slide, imageUrl: undefined };
     }
-  }
-  function updateSlide(next: Slide) {
-    stop();
-    if (visibleSlideChanged(slide, next)) {
-      if (slide.imageUrl) {
-        URL.revokeObjectURL(slide.imageUrl);
-        ownedImages.current.delete(slide.imageUrl);
-      }
-      next = { ...next, imageUrl: undefined };
-    }
-    setDeck((current) => ({
-      ...current,
-      slides: current.slides.map((s, i) => (i === active ? next : s)),
-    }));
-    setVideo(null);
-    if (next.narration !== slide.narration)
-      setDurations((current) =>
-        current.map((d, i) => (i === active ? estimatedDuration(next) : d)),
-      );
-    offset.current = 0;
-    setPosition(0);
-  }
-  function resetExample() {
-    stop();
-    releaseImages();
-    setDeck(demo);
-    setSample(true);
-    setActive(0);
-    offset.current = 0;
-    setPosition(0);
-    setDurations(demoDurations);
-    setVideo(null);
-    setError('');
+    const changed = {
+      ...turn,
+      clips: undefined,
+      deck: {
+        ...turn.deck,
+        slides: turn.deck.slides.map((s, i) => (i === index ? next : s)),
+      },
+    };
+    update(id, changed);
+    void runTurn(changed);
   }
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a href="/" className="brand">
+    <div className="chat-app">
+      <header className="chat-header">
+        <a className="brand" href="/" aria-label="Videogram home">
           <span className="brand-symbol">
-            <Play fill="currentColor" size={17} />
+            <Play size={17} fill="currentColor" />
           </span>
-          videogram<span className="beta">BETA</span>
+          videogram
         </a>
-        <div className="header-center">
-          A little curiosity. A whole new perspective.
-        </div>
-        <button onClick={() => setHelp(true)} className="quiet-button">
-          <CircleHelp size={17} /> How it works
-        </button>
-      </header>
-      <main className="workspace">
-        <aside className="creator">
-          <div className="creator-heading">
-            <span className="section-kicker">YOUR NEXT AHA MOMENT</span>
-            <h1>
-              What are you
-              <br />
-              curious about<span>?</span>
-            </h1>
-            <p>Ask a question. Get an answer you can watch.</p>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              generate({ question, count: Number(count), audience }).catch(
-                report,
-              );
-            }}
+        <span className="conversation-title">
+          {turns.length ? turns[0].question : 'New conversation'}
+        </span>
+        <div className="header-actions">
+          <button
+            className="icon-button"
+            aria-label="About Videogram"
+            onClick={() => setHelp(true)}
           >
-            <div className="question-box">
-              <textarea
-                aria-label="Your question"
-                disabled={locked}
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Why do we dream? How does the internet work? What makes a great story?"
-                maxLength={1500}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    if (!locked)
-                      generate({
-                        question,
-                        count: Number(count),
-                        audience,
-                      }).catch(report);
-                  }
-                }}
-              />
-              <div className="question-bottom">
-                <span>
-                  <Sparkles size={14} /> Start with any question
-                </span>
-                <span>{question.length}/1500</span>
-              </div>
+            <CircleHelp size={19} />
+          </button>
+          <button
+            className="text-button new-chat"
+            disabled={locked || !turns.length}
+            onClick={newChat}
+          >
+            <Plus size={18} />
+            <span>New chat</span>
+          </button>
+        </div>
+      </header>
+      <main
+        className="conversation-scroll"
+        ref={viewport}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 100);
+        }}
+      >
+        {!turns.length ? (
+          <section className="chat-welcome" aria-label="Start a conversation">
+            <div className="welcome-mark">
+              <AudioLines size={34} strokeWidth={1.5} />
             </div>
-            <div className="settings-heading">
-              <SlidersHorizontal size={15} />
-              <h2>Make it yours</h2>
-            </div>
-            <div className="setting-row">
-              <label>Presentation length</label>
-              <Choice
-                disabled={locked}
-                label="Slide count"
-                value={count}
-                onChange={setCount}
-                items={Array.from({ length: 9 }, (_, i) => ({
-                  value: String(i + 2),
-                  label: `${i + 2} slides`,
-                }))}
-              />
-            </div>
-            <div className="setting-row">
-              <label>Narrator</label>
-              <Choice
-                disabled={locked}
-                label="Narrator"
-                value={voice}
-                onChange={(v) => {
-                  stop();
-                  setVoice(v);
-                  invalidateVideo();
-                }}
-                items={[...VOICE_OPTIONS]}
-              />
-            </div>
-            <div className="setting-row">
-              <label>Explain it for</label>
-              <Choice
-                disabled={locked}
-                label="Audience"
-                value={audience}
-                onChange={setAudience}
-                items={[
-                  { value: 'curious', label: 'Curious minds' },
-                  { value: 'kids', label: 'Young learners' },
-                  { value: 'advanced', label: 'Deep thinkers' },
-                ]}
-              />
+            <h1>
+              What would you like
+              <br />
+              to understand?
+            </h1>
+            <p>Ask anything. I’ll answer with a video.</p>
+            <div className="prompt-suggestions">
+              {[
+                'Why do we dream?',
+                'Explain black holes simply.',
+                'How do airplanes stay in the air?',
+              ].map((text) => (
+                <button
+                  key={text}
+                  onClick={() => {
+                    setQuestion(text);
+                    textarea.current?.focus();
+                  }}
+                >
+                  <MessageCircle size={16} />
+                  {text}
+                </button>
+              ))}
             </div>
             <button
-              disabled={locked || question.trim().length < 5}
-              type="submit"
-              className="primary-button create-button"
+              className="example-link"
+              onClick={() => submit('How does the internet work?', true)}
             >
-              {busy.startsWith('Writing') ? (
-                <LoaderCircle className="spinning" size={17} />
-              ) : (
-                <Sparkles size={17} />
-              )}{' '}
-              Create videogram <ArrowRight size={18} />
+              <Play size={13} fill="currentColor" /> Watch an example
+              conversation
             </button>
-            <p className="creation-note">
-              One question. A script, slides, and a voice.
-            </p>
-          </form>
-          {connected === false && (
-            <button onClick={() => setHelp(true)} className="connection-note">
-              <span className="status-dot pending" /> AI connection needed for
-              new questions <ArrowUpRight size={13} />
-            </button>
-          )}
-          <div className="try-example">
-            <span className="section-kicker">NEED A SPARK?</span>
-            <button
-              disabled={locked}
-              onClick={() => {
-                setQuestion('How does the internet work?');
-                resetExample();
-              }}
-            >
-              How does the internet work?{' '}
-              <span className="example-label">
-                Try example <ArrowUpRight size={14} />
-              </span>
-            </button>
-            <button
-              disabled={locked}
-              onClick={() => setQuestion('Why do we dream?')}
-            >
-              Why do we dream? <ArrowUpRight size={15} />
-            </button>
-            <button
-              disabled={locked}
-              onClick={() => setQuestion('Explain black holes to a beginner.')}
-            >
-              What’s inside a black hole? <ArrowUpRight size={15} />
+          </section>
+        ) : (
+          <div className="conversation" aria-label="Conversation">
+            {turns.map((turn) => (
+              <section
+                key={turn.id}
+                className="exchange"
+                aria-label="Conversation turn"
+              >
+                <div className="user-message">
+                  <span className="sr-only">You: </span>
+                  {turn.question}
+                </div>
+                <div className="assistant-message">
+                  <div className="assistant-label">
+                    <span className="assistant-mark">
+                      <Play size={11} fill="currentColor" />
+                    </span>
+                    Videogram
+                    {turn.sample && (
+                      <span className="example-tag">Example</span>
+                    )}
+                  </div>
+                  <VideoReply
+                    turn={turn}
+                    locked={locked}
+                    playingId={playingId}
+                    onPlaying={setPlayingId}
+                    onExporting={(active) => {
+                      exporting.current = active ? turn.id : null;
+                      setExportingId(active ? turn.id : null);
+                    }}
+                    onRetry={() => {
+                      const latest = turnsRef.current.find(
+                        (t) => t.id === turn.id,
+                      );
+                      if (latest) void runTurn(latest);
+                    }}
+                    onCancel={() =>
+                      job.current?.id === turn.id &&
+                      job.current.controller.abort()
+                    }
+                    onEdit={(index, slide, redesign) =>
+                      revise(turn.id, index, slide, redesign)
+                    }
+                  />
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </main>
+      <div className="composer-dock">
+        {!atBottom && turns.length > 0 && (
+          <button
+            className="jump-latest"
+            onClick={scrollDown}
+            aria-label="Jump to latest message"
+          >
+            <ChevronDown size={19} />
+          </button>
+        )}
+        {error && (
+          <div className="composer-error" role="alert">
+            {error}
+            <button aria-label="Dismiss error" onClick={() => setError('')}>
+              <X size={16} />
             </button>
           </div>
-          <div className="creator-footer">
-            <span className="tiny-logo">
-              <Play size={11} fill="currentColor" />
-            </span>{' '}
-            Less scrolling. More understanding.
-          </div>
-        </aside>
-        <section className="studio" aria-label="Video workspace">
-          <div className="studio-heading">
-            <div>
-              <div className="section-kicker">
-                THE VIDEO WORKSPACE{' '}
-                {sample && <span className="sample-badge">EXAMPLE</span>}
-              </div>
-              <h2>{deck.title}</h2>
-              {!sample && (
-                <span className="model-note">
-                  Gemini 3.8 Flash · High reasoning · GPT Image 2
-                </span>
-              )}
-            </div>
+        )}
+        {connected === false && (
+          <p className="connection-note">
+            The AI connection needs setup. You can still watch the example.
+          </p>
+        )}
+        <form
+          className="composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <textarea
+            ref={textarea}
+            rows={1}
+            autoFocus
+            aria-label="Message Videogram"
+            value={question}
+            maxLength={1500}
+            placeholder={
+              turns.length ? 'Ask a follow-up…' : 'Message Videogram…'
+            }
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === 'Enter' &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                if (!locked && question.trim()) submit();
+              }
+            }}
+          />
+          <div className="composer-toolbar">
             <button
-              disabled={locked || missingImages}
-              onClick={makeVideo}
-              className="outline-button"
+              type="button"
+              className="settings-button"
+              onClick={() => setSettings(true)}
             >
-              <Download size={16} /> Export video
-            </button>
-          </div>
-          {error && (
-            <div className="error-notice" role="alert">
-              <span>{error}</span>
-              <button aria-label="Dismiss message" onClick={() => setError('')}>
-                <X size={16} />
-              </button>
-            </div>
-          )}
-          {busy && !exportOpen && (
-            <div className="busy-notice" role="status">
-              <LoaderCircle className="spinning" size={16} />
-              <span>{busy}</span>
-              <button onClick={() => aborter.current?.abort()}>Cancel</button>
-            </div>
-          )}
-          {missingImages && !locked && (
-            <div className="image-notice" role="status">
+              <SlidersHorizontal size={16} />
+              <span>{count} slides</span>
+              <span className="setting-divider">·</span>
               <span>
-                {deck.slides.filter((s) => !s.imageUrl).length} slide image(s)
-                need to be generated. Text edits appear in the draft below.
+                {
+                  VOICE_OPTIONS.find((v) => v.value === voice)?.label.split(
+                    ' · ',
+                  )[0]
+                }{' '}
+                voice
               </span>
+            </button>
+            {busyId ? (
               <button
-                className="outline-button"
-                onClick={() => renderImages(true)}
+                type="button"
+                className="send-button stop-button"
+                aria-label="Stop response"
+                onClick={() => job.current?.controller.abort()}
               >
-                <Sparkles size={15} /> Finish slide images
+                <Square size={15} fill="currentColor" />
               </button>
-            </div>
-          )}
-          <div className="video-frame canvas-frame">
-            <SlideCanvas
-              slide={slide}
-              index={active}
-              count={deck.slides.length}
-            />
-            {!playing && !locked && !missingImages && (
+            ) : (
               <button
-                className="preview-play"
-                onClick={togglePlayback}
-                aria-label="Play narrated lesson"
+                type="submit"
+                className="send-button"
+                disabled={locked || !question.trim()}
+                aria-label="Send message"
               >
-                <Play fill="currentColor" size={20} />
+                {exportingId ? (
+                  <LoaderCircle size={20} className="spinning" />
+                ) : (
+                  <ArrowUp size={21} />
+                )}
               </button>
             )}
           </div>
-          <div className="playback">
-            <button
-              disabled={locked || missingImages}
-              onClick={togglePlayback}
-              className="play-button"
-              aria-label={playing ? 'Pause video' : 'Play video'}
-            >
-              {playing ? (
-                <Pause size={18} fill="currentColor" />
-              ) : (
-                <Play size={18} fill="currentColor" />
-              )}
-            </button>
-            <span className="time">
-              {formatTime(position)} <span>/ {formatTime(total)}</span>
-            </span>
-            <Progress
-              value={total ? (position / total) * 100 : 0}
-              aria-label="Playback progress"
-              className="playback-progress"
-            />
-            <span className="playback-meta">
-              <AudioLines size={16} />
-              {sample ? 'Demo voice' : 'AI narration'}
-            </span>
-            <button
-              disabled={locked || active === 0}
-              aria-label="Previous slide"
-              onClick={() => chooseSlide(active - 1)}
-              className="icon-button"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              disabled={locked || active === deck.slides.length - 1}
-              aria-label="Next slide"
-              onClick={() => chooseSlide(active + 1)}
-              className="icon-button"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-          <Tabs
-            value={tab}
-            onValueChange={(v) => setTab(String(v))}
-            className="editor-tabs"
-          >
-            <div className="editor-top">
-              <TabsList variant="line">
-                <TabsTrigger value="slides">
-                  <Layers /> Slides{' '}
-                  <span className="tab-count">{deck.slides.length}</span>
-                </TabsTrigger>
-                <TabsTrigger value="script">
-                  <AudioLines /> Script & voiceover
-                </TabsTrigger>
-              </TabsList>
-              {!sample && (
-                <button
-                  disabled={locked}
-                  className="quiet-button edit-slide"
-                  onClick={() => renderImages(false)}
-                >
-                  <Sparkles size={14} />{' '}
-                  {slide.imageUrl ? 'Redesign' : 'Generate image'}
-                </button>
-              )}
-              <button
-                disabled={locked}
-                onClick={() => {
-                  stop();
-                  setDraft({ ...slide, points: [...slide.points] });
-                  setEditOpen(true);
-                }}
-                className="quiet-button edit-slide"
-              >
-                <Pencil size={14} /> Edit slide
-              </button>
-            </div>
-            <TabsContent value="slides">
-              <div
-                className="slide-strip"
-                style={{
-                  gridTemplateColumns: `repeat(${deck.slides.length}, minmax(130px, 1fr))`,
-                }}
-              >
-                {deck.slides.map((s, i) => (
-                  <button
-                    disabled={locked}
-                    aria-label={`Select slide ${i + 1}: ${s.title}`}
-                    aria-pressed={active === i}
-                    key={i}
-                    onClick={() => chooseSlide(i)}
-                    className={`slide-thumbnail ${active === i ? 'selected' : ''}`}
-                  >
-                    <div className="thumbnail-canvas">
-                      <SlideCanvas
-                        slide={s}
-                        index={i}
-                        count={deck.slides.length}
-                      />
-                    </div>
-                    <div className="thumbnail-meta">
-                      <span>
-                        <b>{String(i + 1).padStart(2, '0')}</b>{' '}
-                        {i === 0
-                          ? 'Overview'
-                          : i === deck.slides.length - 1
-                            ? 'Takeaway'
-                            : `Chapter ${i}`}
-                      </span>
-                      <span>{formatTime(durations[i])}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </TabsContent>
-            <TabsContent value="script">
-              <div className="script-editor">
-                <div className="script-heading">
-                  <label htmlFor="narration" className="section-kicker">
-                    SLIDE {active + 1} · NARRATION
-                  </label>
-                  <button
-                    className="quiet-button"
-                    onClick={() =>
-                      download(
-                        new Blob(
-                          [
-                            deck.slides
-                              .map(
-                                (s, i) =>
-                                  `SLIDE ${i + 1}: ${s.title}\n\n${s.narration}`,
-                              )
-                              .join('\n\n---\n\n'),
-                          ],
-                          { type: 'text/plain' },
-                        ),
-                        `${filename(deck.title)}-script.txt`,
-                      )
-                    }
-                  >
-                    <Download size={14} /> Download script
-                  </button>
-                </div>
-                <textarea
-                  id="narration"
-                  disabled={locked || playing}
-                  value={slide.narration}
-                  maxLength={1800}
-                  onChange={(e) =>
-                    updateSlide({ ...slide, narration: e.target.value })
-                  }
-                />
-                <div className="script-meta">
-                  <span>
-                    {sample
-                      ? 'The example uses a recorded demo voice. Edited narration needs an AI connection.'
-                      : 'Narration is AI-generated. Edits are voiced when you play or export.'}
-                  </span>
-                  <span>{slide.narration.length}/1800</span>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-          <div className="studio-bottom">
-            <span>
-              <span className="status-dot" />
-              {sample
-                ? 'Explore an example, then make it your own.'
-                : `${deck.slides.length} slides · ${deck.slides.filter((s) => s.imageUrl).length} images ready`}
-            </span>
-            <span>
-              16:9 <span className="dot-separator">·</span> 720p
-            </span>
-          </div>
-          {sample && (
-            <button
-              disabled={locked}
-              className="reset-example"
-              onClick={resetExample}
-            >
-              <RotateCcw size={12} /> Reset example
-            </button>
-          )}
-        </section>
-      </main>
-      <Dialog open={help} onOpenChange={setHelp}>
-        <DialogContent className="help-dialog">
-          <DialogTitle>From a question to a videogram.</DialogTitle>
+        </form>
+        <p className="composer-footnote">
+          AI videos can make mistakes. Chat clears on refresh.
+        </p>
+      </div>
+      <Dialog open={settings} onOpenChange={setSettings}>
+        <DialogContent className="settings-dialog">
+          <DialogTitle>Video replies</DialogTitle>
           <DialogDescription>
-            A short explanation you can watch, edit, and keep.
+            These choices apply to your next message.
           </DialogDescription>
-          <ol className="how-steps">
-            <li>
-              <span>01</span>
-              <div>
-                <strong>Follow your curiosity</strong>
-                <p>
-                  Ask a question, choose 2–10 slides, and pick your audience.
-                </p>
-              </div>
-            </li>
-            <li>
-              <span>02</span>
-              <div>
-                <strong>Make the answer yours</strong>
-                <p>
-                  Gemini plans the script and visual story; GPT Image 2 designs
-                  each slide. Choose a Qwen voice for everyday narration or a
-                  MiniMax voice for a different delivery.
-                </p>
-              </div>
-            </li>
-            <li>
-              <span>03</span>
-              <div>
-                <strong>Watch it. Take it with you.</strong>
-                <p>
-                  Play the lesson or export a narrated 720p video. Export runs
-                  in real time; keep this tab visible. The format is MP4 or
-                  WebM, depending on your browser.
-                </p>
-              </div>
-            </li>
-          </ol>
-          {connected !== true && (
-            <div className="setup-box">
-              <strong>Try the example now</strong>
-              <p>
-                The five-slide internet lesson has a ready-to-play demo voice
-                and can be exported. New questions and edited narration need an
-                OpenRouter API connection, which the site owner must configure.
-              </p>
-            </div>
-          )}
-          <p className="help-footnote">
-            Generated lessons may contain mistakes. Review the script before
-            sharing.
-          </p>
-          <button className="primary-button" onClick={() => setHelp(false)}>
-            Back to the workspace <ArrowRight size={16} />
+          <div className="setting-row">
+            <label>Length</label>
+            <Choice
+              label="Slide count"
+              value={count}
+              onChange={setCount}
+              items={Array.from({ length: 9 }, (_, i) => ({
+                value: String(i + 2),
+                label: `${i + 2} slides`,
+              }))}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Voice</label>
+            <Choice
+              label="Narrator"
+              value={voice}
+              onChange={setVoice}
+              items={[...VOICE_OPTIONS]}
+            />
+          </div>
+          <div className="setting-row">
+            <label>Explain it for</label>
+            <Choice
+              label="Audience"
+              value={audience}
+              onChange={setAudience}
+              items={[
+                { value: 'curious', label: 'Curious minds' },
+                { value: 'kids', label: 'Young learners' },
+                { value: 'advanced', label: 'Deeper understanding' },
+              ]}
+            />
+          </div>
+          <button className="primary-button" onClick={() => setSettings(false)}>
+            Done
           </button>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={exportOpen}
-        onOpenChange={(open) => {
-          if (!open && locked) aborter.current?.abort();
-          setExportOpen(open);
-        }}
-      >
-        <DialogContent className="export-dialog">
-          <DialogTitle>
-            {video ? 'Your videogram is ready.' : 'Putting it all together.'}
-          </DialogTitle>
+      <Dialog open={help} onOpenChange={setHelp}>
+        <DialogContent className="help-dialog">
+          <DialogTitle>A conversation you can watch.</DialogTitle>
           <DialogDescription>
-            {video
-              ? 'Your slides and voiceover, in one video.'
-              : 'Keep this tab visible while we render the slides and narration.'}
+            Send a message and Videogram replies with a short narrated video.
+            Ask a follow-up to go deeper, make it simpler, or explore something
+            new.
           </DialogDescription>
-          {video ? (
-            <>
-              <video src={video.url} controls className="export-player" />
-              <div className="export-details">
-                <span>
-                  <Check size={14} />{' '}
-                  {video.blob.type.includes('mp4') ? 'MP4' : 'WebM'} · 720p
-                </span>
-                <span>{(video.blob.size / 1024 / 1024).toFixed(1)} MB</span>
-              </div>
-              <button
-                className="primary-button"
-                onClick={() => download(video.blob, video.name)}
-              >
-                <Download size={16} /> Download video
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="export-animation">
-                <AudioLines size={38} />
-              </div>
-              <div role="status" className="export-status">
-                <span>{busy}</span>
-                <span>{progress}%</span>
-              </div>
-              <Progress value={progress} aria-label="Video export progress" />
-              <button
-                className="outline-button cancel-export"
-                onClick={() => aborter.current?.abort()}
-              >
-                Cancel export
-              </button>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="edit-dialog">
-          <DialogTitle>Edit slide {active + 1}</DialogTitle>
-          <DialogDescription>
-            Keep each slide focused on one idea. Editing the slide text or
-            visual brief will require a new slide image.
-          </DialogDescription>
-          {draft && (
-            <form
-              className="slide-edit-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                updateSlide(draft);
-                setEditOpen(false);
-              }}
-            >
-              <label>
-                Eyebrow
-                <input
-                  required
-                  maxLength={40}
-                  value={draft.eyebrow}
-                  onChange={(e) =>
-                    setDraft({ ...draft, eyebrow: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Title
-                <textarea
-                  required
-                  maxLength={75}
-                  value={draft.title}
-                  onChange={(e) =>
-                    setDraft({ ...draft, title: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Supporting sentence
-                <input
-                  required
-                  maxLength={150}
-                  value={draft.body}
-                  onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                />
-              </label>
-              <fieldset>
-                <legend>Three key ideas</legend>
-                {draft.points.map((p, i) => (
-                  <input
-                    key={i}
-                    required
-                    aria-label={`Key idea ${i + 1}`}
-                    maxLength={35}
-                    value={p}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        points: draft.points.map((v, n) =>
-                          n === i ? e.target.value : v,
-                        ),
-                      })
-                    }
-                  />
-                ))}
-              </fieldset>
-              {!sample && (
-                <label>
-                  Visual brief
-                  <textarea
-                    required
-                    maxLength={900}
-                    value={draft.visualBrief || ''}
-                    onChange={(e) =>
-                      setDraft({ ...draft, visualBrief: e.target.value })
-                    }
-                  />
-                </label>
-              )}
-              <button className="primary-button" type="submit">
-                <Check size={16} /> Save slide
-              </button>
-            </form>
-          )}
+          <p>
+            Play answers right in the conversation. The transcript, slide
+            editing, and video download are available beneath each reply.
+          </p>
+          <p>
+            Gemini 3.8 Flash uses high reasoning to plan each answer. GPT Image
+            2 creates the visuals, with Qwen or MiniMax AI narration.
+          </p>
+          <p>
+            Recent completed answers provide context for follow-ups. Refreshing
+            or starting a new chat clears this conversation. Download any videos
+            you want to keep.
+          </p>
         </DialogContent>
       </Dialog>
     </div>

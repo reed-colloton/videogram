@@ -2,7 +2,9 @@
 
 An educational video chatbot: question → 2–10 slides and script → narration → a downloadable 720p video.
 
-The workspace includes a narrated example, editable slide text and scripts, playback, and browser video export. All AI requests use one server-side OpenRouter key.
+The primary interface is a conversation: send a message, receive an inline narrated video reply, and ask a follow-up. Visuals and narration are generated automatically before a reply becomes playable. A compact composer holds settings for the next reply; transcript, editing, and download actions live beneath each video. An example conversation is available without API usage. All AI requests use one server-side OpenRouter key.
+
+Each turn retains its own slides, audio, and chosen voice. Recent completed video transcripts provide context for follow-ups; failed or stopped answers are excluded. The server accepts only alternating user/assistant history, up to four pairs and 10,000 characters, with a 64 KB generation request limit. New chat clears the thread and releases media resources. History is held in this tab, not saved across refreshes.
 
 - **Script and visual planning:** `google/gemini-3.8-flash`, explicitly `reasoning.effort: high` with reasoning excluded from the user response. No model fallback or reasoning downgrade.
 - **Finished slide images:** `openai/gpt-image-2`, 16:9, medium quality, one image per slide. The browser requests up to two images at once and retains completed images if another fails. Editing visible slide text or its visual brief clears the old image and requires regeneration; narration-only edits preserve the image. The same generated images appear in previews and video exports.
@@ -21,13 +23,13 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-For local live generation, visit `/signin-with-chatgpt?return_to=/` once to activate the local Sites identity. Hosted requests use the platform-provided signed-in user identity; both paid endpoints reject missing identity.
+For local live generation, visit `/signin-with-chatgpt?return_to=/` once to activate the local Sites identity. Hosted requests use the platform-provided signed-in user identity; all three paid endpoints reject missing identity.
 
 No API key is required for the original example’s playback or export. New lessons, slide images, and new or edited narration require the API connection. Keep all keys server-side. For the hosted Site, configure `OPENROUTER_API_KEY` as a runtime secret through Sites. The site is private to its owner.
 
 ## Video export
 
-Generated slide images are decoded before recording and painted onto a shared 1280×720 canvas for preview and export. Incomplete images block playback/export until finished. The example retains its built-in template renderer. The browser combines its video track with decoded narration through Web Audio and MediaRecorder. It chooses MP4 when supported, otherwise WebM. Export takes the lesson’s real duration and cancels if the tab is hidden. The resulting video can be previewed and downloaded. No microphone or screen recording permission is needed.
+Replies play inline as synchronized slide images and narration, with pause, seeking, fullscreen, and a collapsible transcript. Only one reply plays at a time. Downloads use the same generated slide images, decoded before recording and painted onto a 1280×720 canvas. Incomplete images block playback/export until finished. The example retains its built-in template renderer. The browser combines its video track with decoded narration through Web Audio and MediaRecorder. It chooses MP4 when supported, otherwise WebM. Export takes the lesson’s real duration and cancels if the tab is hidden. The resulting file downloads and becomes a native inline video in the same reply. Transcript chapter links account for the recording’s exact narration lengths and inter-slide gaps. No microphone or screen recording permission is needed.
 
 ## Verification
 
@@ -37,8 +39,8 @@ npm run build
 node --experimental-strip-types --test tests/*.test.ts
 ```
 
-Live OpenRouter verification on September 6, 2026 passed through the app's authenticated API routes: a two-slide lesson using Gemini 3.8 Flash with high reasoning, two GPT Image 2 slides (1536×864), and MP3 narration with both Qwen voice choices. Both MiniMax voices were also verified in the earlier integration. TypeScript and regression tests cover high reasoning, image decoding, exact model routing, image concurrency, partial failure/retry, cancellation, and invalidation after edits. Browser MediaRecorder export still needs testing in the target browser; generated images have been visually inspected as standalone assets. WebMCP remains feature-detected and has not been verified in a supported browser context.
+Live OpenRouter verification on September 6, 2026 passed through the app's authenticated API routes: a two-slide lesson using Gemini 3.8 Flash with high reasoning, two GPT Image 2 slides (1536×864), and MP3 narration with both Qwen voice choices. Both MiniMax voices were also verified in the earlier integration. TypeScript and regression tests cover high reasoning, image decoding, exact model routing, image concurrency, partial failure/retry, cancellation, and invalidation after edits. The chat update also passed a live two-slide follow-up using the message “Why?” and prior ice/water context, plus regression checks for short follow-ups, bounded history, role rejection, and excluding incomplete replies. Browser interaction and MediaRecorder export still need testing in the target browser; generated images have been visually inspected as standalone assets. WebMCP remains feature-detected and has not been verified in a supported browser context.
 
 ## Boundaries
 
-This version retains the current lesson and generated image blob URLs in memory. Image URLs are revoked when replaced, reset, or unmounted. Refreshing resets to the example. It does not include accounts, saved lesson history, or background rendering. Review generated material for accuracy. Public access would require usage limits and abuse protections before exposing the paid generation endpoints to untrusted users.
+This version retains the current conversation, audio, and generated image blob URLs in memory. Image URLs are revoked when replaced, reset, or unmounted. Refreshing starts an empty conversation. It does not include accounts, saved lesson history, or background rendering. Review generated material for accuracy. Public access would require usage limits and abuse protections before exposing the paid generation endpoints to untrusted users.

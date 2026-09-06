@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 export const metadata: Metadata = {
-  title: 'Videogram — Answers worth watching',
+  title: 'Videogram — Video chat',
   description:
-    'Turn your questions into short educational videos. Create, edit, and export slides with a natural voiceover.',
+    'A conversation in video. Ask a question, watch a narrated answer, and keep the conversation going.',
 };
 export default function RootLayout({
   children,

@@ -22,7 +22,7 @@ test('generation rejects malformed and oversized requests', () => {
   for (const input of [
     null,
     {},
-    { question: 'hi', count: 5, audience: 'kids' },
+    { question: '   ', count: 5, audience: 'kids' },
     { question: 'Valid question', count: 1, audience: 'kids' },
     { question: 'Valid question', count: 11, audience: 'kids' },
     { question: 'Valid question', count: 2.5, audience: 'kids' },

@@ -79,6 +79,7 @@ export async function exportVideo(
   context: AudioContext,
   signal: AbortSignal,
   progress: (percent: number, index: number) => void,
+  onDurations?: (durations: number[]) => void,
 ): Promise<Blob> {
   if (!HTMLCanvasElement.prototype.captureStream)
     throw new Error(
@@ -97,6 +98,7 @@ export async function exportVideo(
         : Promise.resolve(undefined),
     ),
   );
+  onDurations?.(buffers.map((buffer) => buffer.duration));
   signal.throwIfAborted();
   if (document.hidden)
     throw new Error(
