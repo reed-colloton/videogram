@@ -1,2 +1,2 @@
 # Copy to .dev.vars for local Cloudflare development only.
-OPENAI_API_KEY=
+OPENROUTER_API_KEY=

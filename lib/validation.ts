@@ -1,5 +1,6 @@
 import type { Deck, Slide } from './deck';
-export const VOICES = ['marin', 'cedar'] as const;
+import { VOICE_OPTIONS } from './voices.ts';
+export const VOICES = VOICE_OPTIONS.map((voice) => voice.value);
 export const AUDIENCES = ['curious', 'kids', 'advanced'] as const;
 export function validateGeneration(input: unknown) {
   if (!input || typeof input !== 'object')

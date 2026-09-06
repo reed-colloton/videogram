@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 export const getKey = () =>
-  (env as unknown as Record<string, string>).OPENAI_API_KEY ||
-  process.env.OPENAI_API_KEY;
+  (env as unknown as Record<string, string>).OPENROUTER_API_KEY ||
+  process.env.OPENROUTER_API_KEY;
 export const jsonError = (message: string, status: number) =>
   Response.json(
     { error: message },
@@ -41,25 +41,4 @@ export async function readInput(request: Request) {
   } catch {
     throw new Error('The request could not be read.');
   }
-}
-export async function openAI(path: string, body: unknown, signal: AbortSignal) {
-  return fetch(`https://api.openai.com/v1/${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
-  });
-}
-export function providerError(status: number) {
-  return jsonError(
-    status === 429
-      ? 'The AI service is at its limit. Check API billing or try again shortly.'
-      : status === 401 || status === 403
-        ? 'The AI connection needs attention. Check the site’s API key.'
-        : 'The AI service could not finish this request. Please try again.',
-    status === 429 ? 429 : 502,
-  );
 }

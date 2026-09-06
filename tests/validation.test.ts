@@ -33,14 +33,17 @@ test('generation rejects malformed and oversized requests', () => {
     assert.throws(() => validateGeneration(input));
 });
 test('speech enforces input limits and voice allowlist', () => {
-  assert.deepEqual(validateSpeech({ text: ' Hello ', voice: 'marin' }), {
-    text: 'Hello',
-    voice: 'marin',
-  });
+  assert.deepEqual(
+    validateSpeech({ text: ' Hello ', voice: 'English_expressive_narrator' }),
+    {
+      text: 'Hello',
+      voice: 'English_expressive_narrator',
+    },
+  );
   for (const input of [
     null,
-    { text: '', voice: 'marin' },
-    { text: 'x'.repeat(1801), voice: 'marin' },
+    { text: '', voice: 'English_expressive_narrator' },
+    { text: 'x'.repeat(1801), voice: 'English_expressive_narrator' },
     { text: 'hello', voice: 'untrusted' },
   ])
     assert.throws(() => validateSpeech(input));

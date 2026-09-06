@@ -44,6 +44,7 @@ import {
 import { drawSlide } from '@/lib/render';
 import { download, exportVideo, filename, getNarration } from '@/lib/media';
 import { validateGeneration } from '@/lib/validation';
+import { DEFAULT_VOICE, VOICE_OPTIONS } from '@/lib/voices';
 
 const demoDurations = [13.429, 14.354, 14.946, 16.521, 17.135];
 type Registry = {
@@ -119,7 +120,7 @@ function SlideCanvas({
 export default function Home() {
   const [question, setQuestion] = useState('');
   const [count, setCount] = useState('5');
-  const [voice, setVoice] = useState('marin');
+  const [voice, setVoice] = useState<string>(DEFAULT_VOICE);
   const [audience, setAudience] = useState('curious');
   const [deck, setDeck] = useState<Deck>(demo);
   const [sample, setSample] = useState(true);
@@ -533,10 +534,7 @@ export default function Home() {
                   setVoice(v);
                   invalidateVideo();
                 }}
-                items={[
-                  { value: 'marin', label: 'Marin · Warm' },
-                  { value: 'cedar', label: 'Cedar · Clear' },
-                ]}
+                items={[...VOICE_OPTIONS]}
               />
             </div>
             <div className="setting-row">
@@ -855,8 +853,8 @@ export default function Home() {
               <div>
                 <strong>Make the answer yours</strong>
                 <p>
-                  Review the slides and edit the script. Choose Marin or Cedar
-                  for natural AI narration.
+                  Review the slides and edit the script. Choose Narrator or
+                  Storyteller for natural AI narration.
                 </p>
               </div>
             </li>
@@ -878,7 +876,7 @@ export default function Home() {
               <p>
                 The five-slide internet lesson has a ready-to-play demo voice
                 and can be exported. New questions and edited narration need an
-                OpenAI API connection, which the site owner must configure.
+                OpenRouter API connection, which the site owner must configure.
               </p>
             </div>
           )}
