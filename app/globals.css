@@ -1538,3 +1538,41 @@ svg {
     width: 14px;
   }
 }
+.model-note {
+  display: block;
+  margin-top: 8px;
+  color: #839077;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.image-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid #dde5cf;
+  background: #f0f5e6;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  color: #6a7d52;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.image-notice .outline-button {
+  flex-shrink: 0;
+}
+@media (max-width: 1100px) {
+  .editor-top {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+  .editor-top [data-slot='tabs-list'] {
+    margin-right: auto;
+  }
+  .image-notice {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}

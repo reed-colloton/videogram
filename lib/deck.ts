@@ -4,6 +4,8 @@ export type Slide = {
   body: string;
   points: string[];
   narration: string;
+  visualBrief?: string;
+  imageUrl?: string;
 };
 export type Deck = { title: string; slides: Slide[] };
 export const demo: Deck = {

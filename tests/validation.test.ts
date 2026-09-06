@@ -49,7 +49,7 @@ test('speech enforces input limits and voice allowlist', () => {
     assert.throws(() => validateSpeech(input));
 });
 test('validates output count and malformed model output', () => {
-  assert.equal(validateDeck(demo, 5), demo);
+  assert.deepEqual(validateDeck(demo, 5), demo);
   assert.throws(() => validateDeck(demo, 4));
   const bad = structuredClone(demo);
   bad.slides[0].points = ['one'];

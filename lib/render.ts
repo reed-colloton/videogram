@@ -55,11 +55,16 @@ export function drawSlide(
   slide: Slide,
   index: number,
   count: number,
+  generatedImage?: CanvasImageSource,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Your browser could not render the slides.');
   canvas.width = 1280;
   canvas.height = 720;
+  if (generatedImage) {
+    ctx.drawImage(generatedImage, 0, 0, 1280, 720);
+    return;
+  }
   const dark = index === 0 || index === count - 1;
   const bg = dark ? '#142b28' : index % 2 ? '#e8efdf' : '#e5eaec';
   const fg = dark ? '#f2f8ed' : '#263e32';

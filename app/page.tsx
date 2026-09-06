@@ -45,6 +45,13 @@ import { drawSlide } from '@/lib/render';
 import { download, exportVideo, filename, getNarration } from '@/lib/media';
 import { validateGeneration } from '@/lib/validation';
 import { DEFAULT_VOICE, VOICE_OPTIONS } from '@/lib/voices';
+import {
+  generateSlideImages,
+  hasMissingImages,
+  loadSlideImage,
+  requestSlideImage,
+} from '@/lib/image-loading';
+import { visibleSlideChanged } from '@/lib/slide-images';
 
 const demoDurations = [13.429, 14.354, 14.946, 16.521, 17.135];
 type Registry = {
@@ -104,7 +111,19 @@ function SlideCanvas({
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (ref.current) drawSlide(ref.current, slide, index, count);
+    const controller = new AbortController();
+    const canvas = ref.current;
+    if (canvas) {
+      drawSlide(canvas, slide, index, count);
+      if (slide.imageUrl)
+        void loadSlideImage(slide.imageUrl, controller.signal)
+          .then((image) => {
+            if (!controller.signal.aborted)
+              drawSlide(canvas, slide, index, count, image);
+          })
+          .catch(() => {});
+    }
+    return () => controller.abort();
   }, [slide, index, count]);
   return (
     <canvas
@@ -148,9 +167,15 @@ export default function Home() {
   const offset = useRef(0);
   const aborter = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
+  const ownedImages = useRef(new Set<string>());
+  const releaseImages = useCallback(() => {
+    for (const url of ownedImages.current) URL.revokeObjectURL(url);
+    ownedImages.current.clear();
+  }, []);
   const slide = deck.slides[active];
   const total = durations.reduce((a, b) => a + b, 0);
   const locked = Boolean(busy);
+  const missingImages = !sample && hasMissingImages(deck.slides);
   const stop = useCallback(() => {
     cancelAnimationFrame(raf.current);
     for (const source of sources.current) {
@@ -179,8 +204,9 @@ export default function Home() {
     () => () => {
       aborter.current?.abort();
       stop();
+      releaseImages();
     },
-    [stop],
+    [stop, releaseImages],
   );
   useEffect(
     () => () => {
@@ -194,6 +220,31 @@ export default function Home() {
     offset.current = durations.slice(0, index).reduce((a, b) => a + b, 0);
     setPosition(offset.current);
   }
+  const populateImages = useCallback(
+    async (input: Deck, signal: AbortSignal) => {
+      const working: Deck = { ...input, slides: [...input.slides] };
+      setBusy('Designing slide images…');
+      const failures = await generateSlideImages(
+        working,
+        signal,
+        (index, url) => {
+          ownedImages.current.add(url);
+          working.slides[index] = { ...working.slides[index], imageUrl: url };
+          setDeck({ ...working, slides: [...working.slides] });
+        },
+        (done) =>
+          setBusy(
+            `Designing slide images · ${done} of ${working.slides.length}`,
+          ),
+      );
+      if (failures.length)
+        throw new Error(
+          `${failures.length} slide image${failures.length === 1 ? '' : 's'} could not finish. Your completed slides are kept. ${failures[0].message}`,
+        );
+      return working;
+    },
+    [],
+  );
   const generate = useCallback(
     async (input: { question: string; count: number; audience: string }) => {
       const valid = validateGeneration(input);
@@ -216,6 +267,7 @@ export default function Home() {
         if (!response.ok)
           throw new Error(result.error || 'The lesson could not be created.');
         const next = result as Deck;
+        releaseImages();
         setDeck(next);
         setQuestion(valid.question);
         setCount(String(valid.count));
@@ -227,6 +279,7 @@ export default function Home() {
         setVideo(null);
         setDurations(next.slides.map(estimatedDuration));
         setConnected(true);
+        await populateImages(next, controller.signal);
         return {
           title: next.title,
           slideCount: next.slides.length,
@@ -238,7 +291,7 @@ export default function Home() {
         aborter.current = null;
       }
     },
-    [stop],
+    [stop, populateImages, releaseImages],
   );
   const actions = useRef({ generate });
   actions.current = { generate };
@@ -254,7 +307,7 @@ export default function Home() {
             name: 'create_videogram_slides',
             title: 'Create a Videogram lesson',
             description:
-              'Generate and show 2–10 editable educational slides with a narration script. Voiceover and video export are separate actions in the workspace. Requires the site AI connection.',
+              'Generate a script and 2–10 illustrated slide images; wait for all images before returning. Voiceover and video export are separate actions in the workspace. Requires the site AI connection.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -294,6 +347,10 @@ export default function Home() {
       return;
     }
     if (locked) return;
+    if (missingImages) {
+      setError('Finish the missing slide images before playing the video.');
+      return;
+    }
     setError('');
     setBusy('Preparing narration…');
     busyRef.current = true;
@@ -372,6 +429,10 @@ export default function Home() {
     }
   }
   async function makeVideo() {
+    if (missingImages) {
+      setError('Finish the missing slide images before exporting.');
+      return;
+    }
     stop();
     setError('');
     setVideo(null);
@@ -419,8 +480,50 @@ export default function Home() {
       setActive(0);
     }
   }
+  async function renderImages(allMissing: boolean) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    stop();
+    setError('');
+    setVideo(null);
+    const controller = new AbortController();
+    aborter.current = controller;
+    setBusy(
+      allMissing ? 'Finishing slide images…' : `Designing slide ${active + 1}…`,
+    );
+    try {
+      if (allMissing) await populateImages(deck, controller.signal);
+      else {
+        const url = await requestSlideImage(deck, active, controller.signal);
+        ownedImages.current.add(url);
+        if (slide.imageUrl) {
+          URL.revokeObjectURL(slide.imageUrl);
+          ownedImages.current.delete(slide.imageUrl);
+        }
+        setDeck((current) => ({
+          ...current,
+          slides: current.slides.map((s, i) =>
+            i === active ? { ...s, imageUrl: url } : s,
+          ),
+        }));
+      }
+    } catch (e) {
+      report(e);
+    } finally {
+      setBusy('');
+      busyRef.current = false;
+      aborter.current = null;
+    }
+  }
   function updateSlide(next: Slide) {
     stop();
+    if (visibleSlideChanged(slide, next)) {
+      if (slide.imageUrl) {
+        URL.revokeObjectURL(slide.imageUrl);
+        ownedImages.current.delete(slide.imageUrl);
+      }
+      next = { ...next, imageUrl: undefined };
+    }
     setDeck((current) => ({
       ...current,
       slides: current.slides.map((s, i) => (i === active ? next : s)),
@@ -435,6 +538,7 @@ export default function Home() {
   }
   function resetExample() {
     stop();
+    releaseImages();
     setDeck(demo);
     setSample(true);
     setActive(0);
@@ -615,9 +719,14 @@ export default function Home() {
                 {sample && <span className="sample-badge">EXAMPLE</span>}
               </div>
               <h2>{deck.title}</h2>
+              {!sample && (
+                <span className="model-note">
+                  Gemini 3.8 Flash · High reasoning · GPT Image 2
+                </span>
+              )}
             </div>
             <button
-              disabled={locked}
+              disabled={locked || missingImages}
               onClick={makeVideo}
               className="outline-button"
             >
@@ -639,13 +748,27 @@ export default function Home() {
               <button onClick={() => aborter.current?.abort()}>Cancel</button>
             </div>
           )}
+          {missingImages && !locked && (
+            <div className="image-notice" role="status">
+              <span>
+                {deck.slides.filter((s) => !s.imageUrl).length} slide image(s)
+                need to be generated. Text edits appear in the draft below.
+              </span>
+              <button
+                className="outline-button"
+                onClick={() => renderImages(true)}
+              >
+                <Sparkles size={15} /> Finish slide images
+              </button>
+            </div>
+          )}
           <div className="video-frame canvas-frame">
             <SlideCanvas
               slide={slide}
               index={active}
               count={deck.slides.length}
             />
-            {!playing && !locked && (
+            {!playing && !locked && !missingImages && (
               <button
                 className="preview-play"
                 onClick={togglePlayback}
@@ -657,7 +780,7 @@ export default function Home() {
           </div>
           <div className="playback">
             <button
-              disabled={locked}
+              disabled={locked || missingImages}
               onClick={togglePlayback}
               className="play-button"
               aria-label={playing ? 'Pause video' : 'Play video'}
@@ -712,6 +835,16 @@ export default function Home() {
                   <AudioLines /> Script & voiceover
                 </TabsTrigger>
               </TabsList>
+              {!sample && (
+                <button
+                  disabled={locked}
+                  className="quiet-button edit-slide"
+                  onClick={() => renderImages(false)}
+                >
+                  <Sparkles size={14} />{' '}
+                  {slide.imageUrl ? 'Redesign' : 'Generate image'}
+                </button>
+              )}
               <button
                 disabled={locked}
                 onClick={() => {
@@ -815,7 +948,7 @@ export default function Home() {
               <span className="status-dot" />
               {sample
                 ? 'Explore an example, then make it your own.'
-                : `${deck.slides.length} slides · Ready for your voiceover`}
+                : `${deck.slides.length} slides · ${deck.slides.filter((s) => s.imageUrl).length} images ready`}
             </span>
             <span>
               16:9 <span className="dot-separator">·</span> 720p
@@ -853,8 +986,9 @@ export default function Home() {
               <div>
                 <strong>Make the answer yours</strong>
                 <p>
-                  Review the slides and edit the script. Choose Narrator or
-                  Storyteller for natural AI narration.
+                  Gemini plans the script and visual story; GPT Image 2 designs
+                  each slide. Choose a Qwen voice for everyday narration or a
+                  MiniMax voice for a different delivery.
                 </p>
               </div>
             </li>
@@ -946,7 +1080,8 @@ export default function Home() {
         <DialogContent className="edit-dialog">
           <DialogTitle>Edit slide {active + 1}</DialogTitle>
           <DialogDescription>
-            Keep each slide focused on one idea.
+            Keep each slide focused on one idea. Editing the slide text or
+            visual brief will require a new slide image.
           </DialogDescription>
           {draft && (
             <form
@@ -1008,6 +1143,19 @@ export default function Home() {
                   />
                 ))}
               </fieldset>
+              {!sample && (
+                <label>
+                  Visual brief
+                  <textarea
+                    required
+                    maxLength={900}
+                    value={draft.visualBrief || ''}
+                    onChange={(e) =>
+                      setDraft({ ...draft, visualBrief: e.target.value })
+                    }
+                  />
+                </label>
+              )}
               <button className="primary-button" type="submit">
                 <Check size={16} /> Save slide
               </button>

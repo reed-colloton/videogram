@@ -1,6 +1,7 @@
 import type { Deck } from './deck';
 import { demo } from './deck';
 import { drawSlide } from './render';
+import { loadSlideImage } from './image-loading';
 const audioCache = new Map<string, Blob>();
 export async function getNarration(
   deck: Deck,
@@ -89,13 +90,20 @@ export async function exportVideo(
       context.decodeAudioData(await clip.arrayBuffer()),
     ),
   );
+  const slideImages = await Promise.all(
+    deck.slides.map((slide) =>
+      slide.imageUrl
+        ? loadSlideImage(slide.imageUrl, signal)
+        : Promise.resolve(undefined),
+    ),
+  );
   signal.throwIfAborted();
   if (document.hidden)
     throw new Error(
       'Keep Videogram visible while exporting. Return to this tab and try again.',
     );
   const canvas = document.createElement('canvas');
-  drawSlide(canvas, deck.slides[0], 0, deck.slides.length);
+  drawSlide(canvas, deck.slides[0], 0, deck.slides.length, slideImages[0]);
   const dest = context.createMediaStreamDestination();
   const video = canvas.captureStream(30);
   const stream = new MediaStream([
@@ -179,7 +187,13 @@ export async function exportVideo(
         i = Math.max(0, i);
         if (i !== current) {
           current = i;
-          drawSlide(canvas, deck.slides[i], i, deck.slides.length);
+          drawSlide(
+            canvas,
+            deck.slides[i],
+            i,
+            deck.slides.length,
+            slideImages[i],
+          );
         }
         progress(Math.min(100, Math.round((elapsed / duration) * 100)), i);
         if (elapsed >= duration) {

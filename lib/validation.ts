@@ -66,13 +66,27 @@ export function validateDeck(input: unknown, count: number): Deck {
       typeof s.narration !== 'string' ||
       !s.narration.trim() ||
       s.narration.length > 1800 ||
+      (s.visualBrief !== undefined &&
+        (typeof s.visualBrief !== 'string' ||
+          !s.visualBrief.trim() ||
+          s.visualBrief.length > 900)) ||
       !Array.isArray(s.points) ||
       s.points.length !== 3 ||
       s.points.some((p) => typeof p !== 'string' || !p.trim() || p.length > 35)
     )
       throw new Error('One slide needs another pass. Please try again.');
   }
-  return value as Deck;
+  return {
+    title: value.title,
+    slides: (value.slides as Slide[]).map((s) => ({
+      title: s.title,
+      eyebrow: s.eyebrow,
+      body: s.body,
+      points: [...s.points],
+      narration: s.narration,
+      ...(s.visualBrief ? { visualBrief: s.visualBrief } : {}),
+    })),
+  };
 }
 export function lessonSchema(count: number) {
   return {
@@ -88,7 +102,14 @@ export function lessonSchema(count: number) {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['title', 'eyebrow', 'body', 'points', 'narration'],
+          required: [
+            'title',
+            'eyebrow',
+            'body',
+            'points',
+            'narration',
+            'visualBrief',
+          ],
           properties: {
             title: { type: 'string', maxLength: 75 },
             eyebrow: { type: 'string', maxLength: 40 },
@@ -100,6 +121,7 @@ export function lessonSchema(count: number) {
               items: { type: 'string', maxLength: 35 },
             },
             narration: { type: 'string', maxLength: 1800 },
+            visualBrief: { type: 'string', maxLength: 900 },
           },
         },
       },
