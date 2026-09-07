@@ -10,7 +10,7 @@ import {
   validateImageInput,
 } from '@/lib/slide-images';
 export async function POST(request: Request) {
-  const error = requestError(request);
+  const error = await requestError(request);
   if (error) return error;
   let input;
   try {
@@ -21,8 +21,6 @@ export async function POST(request: Request) {
   const key = getKey();
   if (!key)
     return jsonError('Connect OpenRouter to generate slide images.', 503);
-  if (!request.headers.get('oai-authenticated-user-id'))
-    return jsonError('Sign in to Videogram to generate slide images.', 401);
   try {
     const response = await requestOpenRouter(
       'images',

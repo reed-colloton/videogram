@@ -1,19 +1,18 @@
-import { env } from 'cloudflare:workers';
-export const getKey = () =>
-  (env as unknown as Record<string, string>).OPENROUTER_API_KEY ||
-  process.env.OPENROUTER_API_KEY;
+import { authorizationError } from './auth.ts';
+export const getKey = () => process.env.OPENROUTER_API_KEY;
 export const jsonError = (message: string, status: number) =>
   Response.json(
     { error: message },
     { status, headers: { 'Cache-Control': 'no-store' } },
   );
-export function requestError(request: Request) {
+export async function requestError(request: Request) {
   const origin = request.headers.get('origin');
   if (origin && origin !== new URL(request.url).origin)
     return jsonError('This request must come from Videogram.', 403);
   if (!request.headers.get('content-type')?.includes('application/json'))
     return jsonError('Send a JSON request.', 415);
-  return null;
+  const auth = await authorizationError(request);
+  return auth ? jsonError(auth.message, auth.status) : null;
 }
 export async function readInput(request: Request, maxBytes = 16000) {
   const reader = request.body?.getReader();

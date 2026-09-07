@@ -1,22 +1,24 @@
 # Videogram
 
-A chatbot that answers with videos. Ask a question, watch a narrated 2–10 slide explanation, and ask follow-ups in the same conversation.
+A chatbot that answers with narrated videos. Ask a question, watch a 2–10 slide explanation, and ask follow-ups in the same conversation.
 
-Includes editable slides, transcripts, voice choices, and MP4/WebM downloads. Built with React, TypeScript, Vinext, and Cloudflare Workers.
-
-All AI runs through OpenRouter: Gemini 3.8 Flash with high reasoning for scripts, GPT Image 2 for slides, and Qwen or MiniMax for narration.
+Includes editable slides, transcripts, voice choices, and MP4/WebM downloads. Uses React, TypeScript, and Vinext on Node.js. OpenRouter powers Gemini scripts, GPT Image 2 slides, and Qwen or MiniMax narration.
 
 ## Run locally
 
-Requires Node.js 22.13+.
+Use Node.js 24 (`nvm use`), then:
 
 ```sh
 npm ci
-cp .dev.vars.example .dev.vars
+cp .env.example .env.local
+# Set OPENROUTER_API_KEY in .env.local
+npm run dev
 ```
 
-Set `OPENROUTER_API_KEY` in `.dev.vars`, then run `npm run dev`. The key stays server-side; local secret files are ignored by Git.
+No sign-in is needed locally. The example works without a key. Chats clear on refresh; keep the tab visible while downloading videos.
 
-Open the local URL and visit `/signin-with-chatgpt?return_to=/` once to enable local generation. The included example works without an API key.
+## App Engine
 
-Chats clear on refresh. Downloads render in real time, so keep the tab visible.
+Ready for App Engine Standard: Node.js 24, Secret Manager, and Google IAP. See [setup and deployment instructions](docs/app-engine.md). Nothing deploys automatically.
+
+Run `npm run check` to validate the app.

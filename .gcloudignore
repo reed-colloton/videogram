@@ -1,0 +1,27 @@
+.gcloudignore
+.git
+.git/**
+#!include:.gitignore
+# Never upload local keys, credentials, or development state.
+.env*
+.dev.vars*
+*.pem
+*.key
+*service-account*.json
+application_default_credentials.json
+.credentials/
+.openai/
+.agents/
+.codex/
+# Cloud Build installs dependencies and creates Linux production output.
+node_modules/
+dist/
+.next/
+.vinext/
+.wrangler/
+coverage/
+outputs/
+work/
+tests/
+docs/
+scripts/smoke-production.mjs

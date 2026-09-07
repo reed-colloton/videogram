@@ -136,7 +136,6 @@ export async function requestOpenRouter(
     headers: {
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://videogram.reed-c.chatgpt.site',
       'X-Title': 'Videogram',
     },
     body: JSON.stringify(body),

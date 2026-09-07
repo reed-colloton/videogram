@@ -7,7 +7,7 @@ import {
   speechRequest,
 } from '@/lib/openrouter';
 export async function POST(request: Request) {
-  const error = requestError(request);
+  const error = await requestError(request);
   if (error) return error;
   let input;
   try {
@@ -21,8 +21,6 @@ export async function POST(request: Request) {
       'An OpenRouter API connection is needed to voice new or edited narration. The original example includes a ready-to-play demo voice.',
       503,
     );
-  if (!request.headers.get('oai-authenticated-user-id'))
-    return jsonError('Sign in to Videogram to use the AI connection.', 401);
   try {
     const response = await requestOpenRouter(
       'audio/speech',

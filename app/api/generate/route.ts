@@ -8,7 +8,7 @@ import {
   requestOpenRouter,
 } from '@/lib/openrouter';
 export async function POST(request: Request) {
-  const error = requestError(request);
+  const error = await requestError(request);
   if (error) return error;
   let input;
   try {
@@ -22,8 +22,6 @@ export async function POST(request: Request) {
       'AI generation is not connected yet. You can explore, play, and export the example lesson. Connect an OpenRouter API key to create answers to new questions.',
       503,
     );
-  if (!request.headers.get('oai-authenticated-user-id'))
-    return jsonError('Sign in to Videogram to use the AI connection.', 401);
   try {
     const response = await requestOpenRouter(
       'chat/completions',

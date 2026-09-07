@@ -19,6 +19,10 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*service-account*.json
+application_default_credentials.json
+.credentials/
 
 # debug
 npm-debug.log*
@@ -37,9 +41,8 @@ next-env.d.ts
 /outputs/
 /work/
 
-# local Cloudflare secrets
+# Legacy local secret files stay excluded after the Node.js migration.
 .dev.vars
 .dev.vars.*
-!.dev.vars.example
 !.env.example
 *.tsbuildinfo
